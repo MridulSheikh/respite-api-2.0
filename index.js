@@ -91,7 +91,26 @@ async function run() {
 
     app.post("/api/v1/login/oauth", async (req, res) => {
       try {
-      } catch (error) {}
+        const { email, name } = req.body;
+        const user = await userCollection.findOne({ email });
+        if (!user) {
+          await userCollection.insertOne({ name, email });
+        }
+        const token = jwt.sign({ name, email }, process.env.JWT_SECRET, {
+          expiresIn: process.env.EXPIRES_IN,
+        });
+        res.json({
+          success: true,
+          message: "Login successful",
+          token,
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "something went worng!",
+          error,
+        });
+      }
     });
 
     // ==============================================================
@@ -328,31 +347,6 @@ async function run() {
   } finally {
   }
 }
-
-app.patch("/api/v1/posts/like/:id", AppVerify, async (req, res) => {
-  try {
-    const { user } = req.body;
-    const result = await postCollection.updateOne(req.body);
-    res.status(200).json({
-      success: true,
-      message: "Successfully posted!",
-      data: result,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "something went worng!",
-      error,
-    });
-  }
-});
-
-app.get("/api/v1/tokenverify", AppVerify, async (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: "Successfully Token Verify",
-  });
-});
 
 run().catch(console.dir);
 
