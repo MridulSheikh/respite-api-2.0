@@ -75,7 +75,7 @@ async function run() {
 
       // Generate JWT token
       const token = jwt.sign(
-        { email: user.email, name: user.name },
+        { email: user.email, name: user.name, img: user.img },
         process.env.JWT_SECRET,
         {
           expiresIn: process.env.EXPIRES_IN,
@@ -89,23 +89,94 @@ async function run() {
       });
     });
 
+    // update password
+    app.patch("/api/v1/auth/update-password", AppVerify, async (req, res) => {
+      try {
+        const { password, newPassword } = req.body;
+        const { email } = req.user;
+        const user = await userCollection.findOne({
+          email: email,
+        });
+
+        if (!user) {
+          return res.status(404).json({
+            success: false,
+            message: "User not found",
+          });
+        }
+
+        // Compare hashed password
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+          return res.status(401).json({ message: "Invalid password" });
+        }
+
+        // Generate hash Password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        const result = await userCollection.updateOne(
+          { email },
+          { $set: { password: hashedPassword } },
+          { upsert: true }
+        );
+        if (!result.acknowledged) {
+          return res.status(500).json({
+            success: false,
+            message: "something went wrong please try again",
+          });
+        }
+        return res.status(200).send({
+          success: true,
+          message: "Successfully changed password",
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "An error occurred",
+          error: error.message,
+        });
+      }
+    });
+
+    // login with Oauth
     app.post("/api/v1/login/oauth", async (req, res) => {
       try {
-        const { email, name } = req.body;
-        const user = await userCollection.findOne({ email });
-        if (!user) {
-          await userCollection.insertOne({ name, email });
+        const { password, email } = req.body;
+        if (password) {
+          // Hash the password
+          const hashedPassword = await bcrypt.hash(password, 10);
+          await userCollection.insertOne({
+            ...req.body,
+            password: hashedPassword,
+          });
+          const user = await userCollection.findOne({ email });
+          const token = jwt.sign(
+            { email: user.email, name: user.name, img: user.img },
+            process.env.JWT_SECRET,
+            {
+              expiresIn: process.env.EXPIRES_IN,
+            }
+          );
+          return res.status(200).send({
+            success: true,
+            message: "Login successful",
+            token,
+          });
         }
-        const token = jwt.sign({ name, email }, process.env.JWT_SECRET, {
-          expiresIn: process.env.EXPIRES_IN,
-        });
-        res.json({
+        const user = await userCollection.findOne({ email });
+        const token = jwt.sign(
+          { name: user.name, email: user.email, img: user.img },
+          process.env.JWT_SECRET,
+          {
+            expiresIn: process.env.EXPIRES_IN,
+          }
+        );
+        res.status(200).send({
           success: true,
           message: "Login successful",
           token,
         });
       } catch (error) {
-        res.status(500).json({
+        res.status(500).send({
           success: false,
           message: "something went worng!",
           error,
@@ -116,6 +187,89 @@ async function run() {
     // ==============================================================
     // Other logic
     // ==============================================================
+
+    app.post("/api/v1/user", async (req, res) => {
+      try {
+        const token = req.headers.token;
+
+        if (!token) {
+          return res.status(400).json({
+            success: false,
+            message: "Token is required",
+          });
+        }
+
+        const decode = jwt.decode(token);
+
+        if (!decode || !decode.email) {
+          return res.status(401).json({
+            success: false,
+            message: "Invalid token",
+          });
+        }
+
+        const isUserExist = await userCollection.findOne({
+          email: decode.email,
+        });
+
+        if (!isUserExist) {
+          return res.status(404).json({
+            success: false,
+            message: "User not found",
+          });
+        }
+
+        const user = {
+          email: isUserExist.email,
+          name: isUserExist.name,
+          img: isUserExist.img,
+        };
+
+        res.status(200).json({
+          success: true,
+          message: "User found",
+          user,
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "An error occurred",
+          error: error.message,
+        });
+      }
+    });
+
+    app.patch("/api/v1/user/update", AppVerify, async (req, res) => {
+      try {
+        const body = req.body;
+        const { email } = req.user;
+        const isUserExits = await userCollection.findOne({ email });
+        if (!isUserExits) {
+          return res.status(404).json({
+            success: false,
+            message: "An error occurred",
+            error: "user not found!",
+          });
+        }
+        const result = await userCollection.updateOne(
+          { email: email },
+          { $set: body }
+        );
+        res.status(200).json({
+          success: true,
+          message: "successfully update profile",
+          result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).json({
+          success: false,
+          message: "An error occurred",
+          error: error.message,
+        });
+      }
+    });
+
     app.post("/api/v1/supplies", AppVerify, async (req, res) => {
       try {
         const result = await supplyCollection.insertOne(req.body);
