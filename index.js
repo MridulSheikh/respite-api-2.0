@@ -188,6 +188,25 @@ async function run() {
     // Other logic
     // ==============================================================
 
+    app.get("/api/v1/user/total", AppVerify, async (req, res) => {
+      try {
+        const cursor = userCollection.find({});
+        const user = await cursor.toArray();
+
+        res.status(200).json({
+          success: true,
+          message: "User found",
+          totalUser: user.length,
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "An error occurred",
+          error: error.message,
+        });
+      }
+    });
+
     app.post("/api/v1/user", async (req, res) => {
       try {
         const token = req.headers.token;
