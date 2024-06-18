@@ -308,8 +308,12 @@ async function run() {
 
     app.get("/api/v1/supplies", async (req, res) => {
       try {
-        const category = req.query.category;
-        const query = category ? { category } : {};
+        const query = {};
+
+        // Iterate through query parameters and add them to the query object
+        for (const [key, value] of Object.entries(req.query)) {
+          query[key] = value;
+        }
         const cursor = supplyCollection.find(query);
         const result = await cursor.toArray();
         res.status(200).json({
@@ -320,7 +324,7 @@ async function run() {
       } catch (error) {
         res.status(500).json({
           success: false,
-          message: "something went worng!",
+          message: "something went wrong!",
           error,
         });
       }
@@ -349,6 +353,18 @@ async function run() {
     app.delete("/api/v1/supplies/:id", AppVerify, async (req, res) => {
       try {
         const id = req.params.id;
+        const { email } = req.user;
+        const supply = await supplyCollection.findOne({
+          _id: new ObjectId(id),
+        });
+        const isCreated = email === supply.createBy;
+        if (!isCreated) {
+          res.status(500).json({
+            success: false,
+            message: "something went worng!",
+            error: "Item not deleted",
+          });
+        }
         const query = { _id: new ObjectId(id) };
         const result = await supplyCollection.deleteOne(query);
         console.log(result);
@@ -408,10 +424,37 @@ async function run() {
       }
     });
 
+    app.get("/api/v1/donations", AppVerify, async (req, res) => {
+      try {
+        const query = {};
+        for (const [key, value] of Object.entries(req.query)) {
+          query[key] = value;
+        }
+        console.log(query);
+        const cursor = donationCollection.find(query);
+        const result = await cursor.toArray();
+        res.status(200).json({
+          success: true,
+          message: "Donation retrieved successfully",
+          body: result,
+        });
+      } catch (error) {
+        res.status(500).json({
+          success: false,
+          message: "something went worng!",
+          error,
+        });
+      }
+    });
+
     app.get("/api/v1/donations/statics", AppVerify, async (req, res) => {
       try {
-        const totalDonations = await donationCollection.countDocuments();
+        const email = req.query.email;
+        const totalDonations = await donationCollection.countDocuments({
+          supplierAccount: email,
+        });
         const cursor = donationCollection.aggregate([
+          { $match: { supplierAccount: email } },
           { $group: { _id: "$category", total: { $sum: 1 } } },
           {
             $project: {
